@@ -13,18 +13,22 @@ class JobInput(BaseModel):
   values=sorted(set(p.strip() for p in v))
   if any(p not in PARTS for p in values):raise ValueError('备件必须来自12项标准目录')
   return values
-class RunInput(BaseModel):
+class ThresholdInput(BaseModel):
+ min_support:float=Field(gt=0,le=1,allow_inf_nan=False)
+ min_confidence:float=Field(gt=0,le=1,allow_inf_nan=False)
+ min_lift:float=Field(ge=0,le=50,allow_inf_nan=False)
+ alpha:float=Field(default=.05,gt=0,le=1,allow_inf_nan=False)
+class RunInput(ThresholdInput):
  name:str=Field(min_length=2,max_length=100)
  equipment:Literal['全部','泵组','压缩机','风机']='全部'
- min_support:float=Field(default=.15,gt=0,le=1,allow_inf_nan=False)
- min_confidence:float=Field(default=.6,gt=0,le=1,allow_inf_nan=False)
- min_lift:float=Field(default=1,ge=0,le=50,allow_inf_nan=False)
+class ThresholdSeen(ThresholdInput):pass
 class KitInput(BaseModel):
  name:str=Field(min_length=2,max_length=100)
  rule_id:int=Field(gt=0)
  note:str=Field(min_length=8,max_length=2000)
+ expected_thresholds:ThresholdSeen|None=None
 class KitEdit(BaseModel):
  name:str=Field(min_length=2,max_length=100)
  note:str=Field(min_length=8,max_length=2000)
 class RuleOutput(BaseModel):
- id:int;run_id:int;antecedent:list[str];consequent:list[str];support:float;confidence:float;lift:float;count:int
+ id:int;run_id:int;antecedent:list[str];consequent:list[str];support:float;confidence:float;lift:float;count:int;p_value:float;q_value:float;in_scope:bool

@@ -38,11 +38,15 @@ docker compose exec -T backend python -m scripts.seed_demo
 
 ## 算法口径和失败态
 
-Python标准库实现Apriori，最大频繁项集长度3。每张含备件的有效作业是一个事务，parts转集合后计数，空事务排除并记录excluded；有效事务N至少2。每张作业内的重复件不增加支持度。最小计数ceil(N×min_support)，用1e−12容差避免浮点整数边界。
+每张含备件的有效作业是一个事务，parts转集合后计数，空事务排除并按设备记录excluded；有效事务N至少2。每张作业内的重复件不增加支持度。最小计数ceil(N×min_support)，用1e−12容差避免浮点整数边界。
 
-对不相交非空A/B，support=count(A∪B)/N，confidence=count(A∪B)/count(A)，lift=confidence/support(B)。候选由上一层频繁项集连接，先检查所有子集频繁再计数。按提升度、置信度、支持度排序，签名作稳定次序。用户可配置支持度(0,1]、置信度(0,1]、提升度[0,50]，只接受12项标准目录。阈值太高时成功完成但没有规则，页面提示降低阈值或增加同类作业；不伪造规则。样本不足则任务failed。相同来源作业生成稳定checksum；提交即冻结样本，后续修订不改变已有报告。
+**泵组、压缩机、风机分开统计，不合并后再看合计。** 候选规则为不相交非空A/B、A∪B不超过3项，从冻结样本出现过的备件全集枚举；枚举不看支持度，因此多重校正范围只由样本决定。对每条规则，在每台设备内固定前件频数a、后件频数b，零假设下共同出现次数服从超几何分布Hypergeom(n,b,a)；各设备独立，对分布做卷积得到合计共同出现次数的精确分布，p=P(X≥实际共同出现次数)为单侧精确概率。同一台设备中前后件都出现过（哪怕从未共现）的候选全部纳入Benjamini-Hochberg校正，得到q值。支持度、置信度、提升度、α只筛选结果，不缩窄校正范围；`support=count(A∪B)/N`、`confidence=count(A∪B)/count(A)`、`lift=confidence/support(B)`仍按冻结样本全量计算。
 
-关联不是必须联换，提升度也不证明因果。备件包用件来自规则并集，人工只能填写名称、适用性和限制；已签核不可覆盖。没有数量推算、设备兼容性数据库或采购动作。
+阈值可配置支持度(0,1]、置信度(0,1]、提升度[0,50]、显著性α(0,1]，只接受12项标准目录。阈值太高时成功完成但没有规则，页面提示降低阈值或增加同类作业；不伪造规则。样本不足则任务failed。相同来源作业生成稳定checksum；提交即冻结样本，后续作业修订不改变已有报告。中断恢复沿用原冻结样本，重试不新增批次或关联规则。
+
+页面支持两种阈值动作：**试看**（`GET /runs/{id}/preview`）按临时阈值只读重判、不落库；**收紧正式阈值**（`PUT /runs/{id}/thresholds`）在批次行锁内重判全部候选并记录修订人与时间。起草备件包时会在同一行锁内按当前正式阈值复判，失格规则返回409与具体原因；判定依据（batch、checksum、最小计数、各设备a/b/共现、p/q、阈值版本）随备件包保存，旧页中仍达标的规则可直接起草。
+
+关联不是必须联换，显著性也不证明因果。备件包用件来自规则并集，人工只能填写名称、适用性和限制；已签核不可覆盖。没有数量推算、设备兼容性数据库或采购动作。
 
 ## 工程与目录
 
@@ -50,7 +54,7 @@ Python标准库实现Apriori，最大频繁项集长度3。每张含备件的有
 |---|---|
 |前端|原生HTML/CSS/ES modules，Nginx|
 |后端|Python3.11、FastAPI、SQLAlchemy、PyJWT|
-|后台|Redis队列，独立worker执行Apriori，文件心跳|
+|后台|Redis队列，独立worker执行分层精确检验，文件心跳|
 |数据库|MySQL8.0，Redis7|
 
 恰好frontend/backend/worker/db/redis五服务，全部healthcheck。backend等db/Redis健康，worker额外等backend，frontend等backend。数据库、Redis与计算产物各用命名卷；worker结果在共享`/artifacts`。Nginx `/api/` 转发到后端根路由；Redis和worker不映射宿主端口。`docker compose down -v --remove-orphans` 清理本项目数据。
